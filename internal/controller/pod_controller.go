@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -60,6 +61,12 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		}
 	}
 
+	podAge := time.Since(pod.CreationTimestamp.Time)
+	if podAge < time.Minute {
+		// Requeue the request with a 15-second delay
+		return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
+	}
+
 	log.Log.Info("Pod is pending and unschedulable", "Pod", req.Name)
 
 	// Label the attached PVC for deletion
@@ -88,6 +95,11 @@ func (r *PodReconciler) labelAttachedPersistentVolumeClaim(ctx context.Context, 
 
 			if pvcToCheck.Status.Phase != corev1.ClaimBound {
 				log.Log.Info("PVC not bound, skipping", "PersistentVolumeClaim", types.NamespacedName{Name: pvc.ClaimName, Namespace: pod.Namespace})
+				continue
+			}
+
+			if pvcToCheck.Annotations["volume.kubernetes.io/selected-node"] == pod.Spec.NodeName {
+				log.Log.Info("PVC already bound to the destination node, skipping", "PersistentVolumeClaim", types.NamespacedName{Name: pvc.ClaimName, Namespace: pod.Namespace})
 				continue
 			}
 
